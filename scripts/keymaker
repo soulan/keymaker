@@ -39,6 +39,16 @@ parser_install = subparsers.add_parser("install",
 parser_install.add_argument("--user",
                             help="User that the SSH auth module will run as. If automatic user and group creation is enabled, this user must have the privileges to do so.")
 
+parser_install.add_argument("--aws_access_key_id",
+                            help="AWS access_key_id to use for keymaker.")
+
+parser_install.add_argument("--aws_secret_access_key",
+                            help="AWS secret_access_key to use for keymaker.")
+
+
+parser_install.add_argument("--ssh_access_api_endpoint",
+                            help="API Endpoint that checkes if the access is alowed, keep in mind that if the endpoint is not responding access id denied.")
+
 parser_get_authorized_keys = subparsers.add_parser(
     "get_authorized_keys",
     help="Get authorized keys for a given IAM/SSH user. This command is used by sshd as AuthorizedKeysCommand when processing authentication requests."

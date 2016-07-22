@@ -12,7 +12,10 @@ import pwd
 import hashlib
 import codecs
 import grp
+import urllib2
+import socket
 from collections import namedtuple
+from os.path import expanduser
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -84,8 +87,24 @@ def get_groups(args):
     except Exception as e:
         err_exit("Error while retrieving UID for {u}: {e}".format(u=args.user, e=str(e)), code=os.errno.EINVAL)
 
+def get_api_url(ssh_access_api_endpoint):
+    metadataurl="http://169.254.169.254/latest/meta-data"
+    instanceidurl=metadataurl+"/instance-id"
+    macurl=metadataurl+"/mac"
+    vpcidurlbase=metadataurl+"/network/interfaces/macs"
+    try:
+        instanceid = urllib2.urlopen(instanceidurl,timeout=2).read()
+        mac = urllib2.urlopen(macurl).read()
+        vpcid = urllib2.urlopen(vpcidurlbase+"/"+mac+"/vpc-id").read()
+        return "curl -s -f -H 'SSH-User: $@' -H 'Instance-Id: "+instanceid+"' -H 'Vpc-Id: "+vpcid+"' '"+ssh_access_api_endpoint+"' > /dev/null"
+    except Exception as e:
+        return "curl -f -H 'SSH-User: $@' -H 'Hostname: "+socket.gethostname()+"' '"+ssh_access_api_endpoint+"'"
+
 def install(args):
     user = args.user or "keymaker"
+    aws_access_key_id = args.aws_access_key_id or None
+    aws_secret_access_key = args.aws_secret_access_key or None
+    ssh_access_api_endpoint = args.ssh_access_api_endpoint or None
     try:
         pwd.getpwnam(user)
     except KeyError:
@@ -93,9 +112,29 @@ def install(args):
                                "--comment", "Keymaker SSH key daemon",
                                "--shell", "/usr/sbin/nologin"])
 
+    if aws_access_key_id is not None and aws_secret_access_key is not None:
+        awsdir = expanduser("~"+user) + "/.aws";
+        if not os.path.exists(awsdir):
+            os.makedirs(awsdir)
+        
+        aws_credentials_path = awsdir+"/credentials"
+        subprocess.check_call(["chown", "-R", user, awsdir])
+        subprocess.check_call(["chmod", "-R", "711", awsdir])
+
+        with open(aws_credentials_path, "w") as fh:
+            print("[default]", file=fh)
+            print('aws_access_key_id='+aws_access_key_id, file=fh)
+            print('aws_secret_access_key='+aws_secret_access_key, file=fh)
+        subprocess.check_call(["chown", "-R", user, aws_credentials_path])
+        subprocess.check_call(["chmod", "-R", "600", aws_credentials_path])
+    elif aws_access_key_id is not None or aws_secret_access_key is not None:
+        exit('You have to provide aws_access_key_id and aws_secret_access_key.')
+
     authorized_keys_script_path = "/usr/sbin/keymaker-get-public-keys"
     with open(authorized_keys_script_path, "w") as fh:
         print("#!/bin/bash -e", file=fh)
+        if ssh_access_api_endpoint is not None:
+            print(get_api_url(ssh_access_api_endpoint), file=fh)
         print('keymaker get_authorized_keys "$@"', file=fh)
     subprocess.check_call(["chown", "root", authorized_keys_script_path])
     subprocess.check_call(["chmod", "go-w", authorized_keys_script_path])
@@ -117,7 +156,7 @@ def install(args):
     # TODO: print explanation if errors occur
     subprocess.check_call(["sshd", "-t"])
 
-    pam_config_line = "auth requisite pam_exec.so stdout /usr/local/bin/keymaker-create-account-for-iam-user"
+    pam_config_line = "auth requisite pam_exec.so stdout /usr/bin/keymaker-create-account-for-iam-user"
     with open("/etc/pam.d/sshd") as fh:
         pam_config_lines = fh.read().splitlines()
     if pam_config_line not in pam_config_lines:
@@ -127,7 +166,7 @@ def install(args):
             print(line, file=fh)
 
     with open("/etc/cron.d/keymaker-group-sync", "w") as fh:
-        print("*/5 * * * * root /usr/local/bin/keymaker sync_groups", file=fh)
+        print("*/5 * * * * root /usr/bin/keymaker sync_groups", file=fh)
 
 def err_exit(msg, code=3):
     print(msg, file=sys.stderr)
