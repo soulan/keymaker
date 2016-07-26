@@ -96,7 +96,7 @@ def get_api_url(ssh_access_api_endpoint):
         instanceid = urllib2.urlopen(instanceidurl,timeout=2).read()
         mac = urllib2.urlopen(macurl).read()
         vpcid = urllib2.urlopen(vpcidurlbase+"/"+mac+"/vpc-id").read()
-        return "curl -s -f -H 'SSH-User: $@' -H 'Instance-Id: "+instanceid+"' -H 'Vpc-Id: "+vpcid+"' '"+ssh_access_api_endpoint+"' > /dev/null"
+        return "curl -s -f -XPOST -H \"SSH-User: $@\" -H 'Instance-Id: "+instanceid+"' -H 'Vpc-Id: "+vpcid+"' '"+ssh_access_api_endpoint+"' > /dev/null"
     except Exception as e:
         return "curl -f -H 'SSH-User: $@' -H 'Hostname: "+socket.gethostname()+"' '"+ssh_access_api_endpoint+"'"
 
